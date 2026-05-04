@@ -1,3 +1,4 @@
+
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -462,6 +463,7 @@
     </label>
     <button class="btn btn-ghost" onclick="exportZip()">Export backup</button>
     <label class="btn btn-ghost" style="cursor:pointer">Import backup<input type="file" accept=".zip" style="display:none" onchange="importZip(event)"></label>
+    <label class="btn btn-ghost" style="cursor:pointer">Import mapping<input type="file" accept=".json" style="display:none" onchange="importMappingJSON(event)"></label>
     <button class="btn btn-ghost" onclick="exportCSV()">Export CSV</button>
   </div>
 </div>
@@ -700,19 +702,18 @@ async function loadFromDB(){
         }
       });
     }
-    if(mapping) {
-      // Also rename any legacy values in the mapping itself
-      const RENAMES = {
-        'Charity':'Charity & Giving','Entertainment':'Entertainment & Culture',
-        'Health Insurance':'Insurance','Cocuncil tax':'Council Tax',
-        'ISA':'Savings & Investments','Beauty & Personal Care':'Health & Beauty',
-      };
-      const cleaned = {};
-      Object.entries({...INIT_MAP, ...mapping}).forEach(([k,v])=>{
-        cleaned[k] = RENAMES[v] || v;
-      });
-      S.mapping = cleaned;
-    }
+    const RENAMES = {
+      'Charity':'Charity & Giving','Entertainment':'Entertainment & Culture',
+      'Health Insurance':'Insurance','Cocuncil tax':'Council Tax',
+      'ISA':'Savings & Investments','Beauty & Personal Care':'Health & Beauty',
+    };
+    const base = mapping && typeof mapping === 'object' ? mapping : {};
+    const cleaned = {};
+    Object.entries({...INIT_MAP, ...base}).forEach(([k,v])=>{
+      cleaned[k] = RENAMES[v] || v;
+    });
+    S.mapping = cleaned;
+    console.log('Mapping loaded:', Object.keys(S.mapping).length, 'rules');
     setAutosave('saved', 'Auto-saved');
   } catch(e) {
     console.warn('DB load failed', e);
@@ -1064,8 +1065,20 @@ async function importZip(evt){
   evt.target.value = '';
 }
 
-// ═══════════════════════════════════════════════════════════════
-// NAVIGATION
+async function importMappingJSON(evt){
+  const file = evt.target.files[0]; if(!file) return;
+  try {
+    const text = await file.text();
+    const imported = JSON.parse(text);
+    S.mapping = {...INIT_MAP, ...imported};
+    applyMapping();
+    applyDescMapping();
+    scheduleSave();
+    render();
+    toast(`Mapping loaded — ${Object.keys(S.mapping).length} rules`);
+  } catch(e){ alert('Error reading mapping: '+e.message); }
+  evt.target.value = '';
+}
 // ═══════════════════════════════════════════════════════════════
 function showTab(tab, el){
   S.activeTab = tab;
