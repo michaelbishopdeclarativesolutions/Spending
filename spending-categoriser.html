@@ -1,0 +1,1721 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Spending Categoriser</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<style>
+  :root {
+    --bg: #f5f4f0;
+    --surface: #ffffff;
+    --surface2: #f0efe9;
+    --border: rgba(0,0,0,0.10);
+    --border2: rgba(0,0,0,0.18);
+    --text: #1a1a18;
+    --text2: #6b6b64;
+    --text3: #9e9e95;
+    --accent: #1a1a18;
+    --green: #2d6a4f;
+    --green-bg: #e8f5ee;
+    --red: #c0392b;
+    --red-bg: #fdecea;
+    --amber: #b45309;
+    --amber-bg: #fef3c7;
+    --blue: #1d4ed8;
+    --blue-bg: #eff6ff;
+    --radius: 8px;
+    --radius-lg: 12px;
+    --shadow: 0 1px 3px rgba(0,0,0,0.08), 0 1px 2px rgba(0,0,0,0.05);
+    --shadow-md: 0 4px 6px rgba(0,0,0,0.07), 0 2px 4px rgba(0,0,0,0.05);
+    --font: 'Georgia', serif;
+    --font-sans: -apple-system, BlinkMacSystemFont, 'Helvetica Neue', sans-serif;
+    --mono: 'SF Mono', 'Fira Code', monospace;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html { font-size: 14px; }
+  body {
+    font-family: var(--font-sans);
+    background: var(--bg);
+    color: var(--text);
+    min-height: 100vh;
+    line-height: 1.5;
+  }
+
+  /* ── Header ── */
+  .header {
+    background: var(--accent);
+    color: #fff;
+    padding: 0 32px;
+    height: 56px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    position: sticky;
+    top: 0;
+    z-index: 100;
+  }
+  .header-title {
+    font-family: var(--font);
+    font-size: 18px;
+    font-weight: normal;
+    letter-spacing: 0.01em;
+  }
+  .header-sub {
+    font-size: 11px;
+    opacity: 0.55;
+    margin-left: 12px;
+    font-family: var(--font-sans);
+  }
+  .header-actions { display: flex; gap: 8px; align-items: center; }
+
+  /* ── Buttons ── */
+  .btn {
+    padding: 7px 14px;
+    border-radius: var(--radius);
+    border: 1px solid var(--border2);
+    background: var(--surface);
+    cursor: pointer;
+    font-size: 13px;
+    font-family: var(--font-sans);
+    color: var(--text);
+    transition: background 0.12s, transform 0.08s;
+    white-space: nowrap;
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+  }
+  .btn:hover { background: var(--surface2); }
+  .btn:active { transform: scale(0.98); }
+  .btn-ghost {
+    background: rgba(255,255,255,0.12);
+    border-color: rgba(255,255,255,0.2);
+    color: #fff;
+    font-size: 12px;
+    padding: 5px 12px;
+  }
+  .btn-ghost:hover { background: rgba(255,255,255,0.22); }
+  .btn-primary {
+    background: var(--accent);
+    color: #fff;
+    border-color: var(--accent);
+  }
+  .btn-primary:hover { opacity: 0.88; }
+  .btn-sm { padding: 4px 10px; font-size: 12px; }
+  .btn:disabled { opacity: 0.4; cursor: default; pointer-events: none; }
+
+  /* ── Layout ── */
+  .layout { display: flex; height: calc(100vh - 56px); }
+
+  /* ── Sidebar nav ── */
+  .sidebar {
+    width: 200px;
+    flex-shrink: 0;
+    background: var(--surface);
+    border-right: 1px solid var(--border);
+    padding: 20px 0;
+    overflow-y: auto;
+  }
+  .nav-section { margin-bottom: 24px; }
+  .nav-label {
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--text3);
+    padding: 0 16px;
+    margin-bottom: 4px;
+  }
+  .nav-item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 8px 16px;
+    cursor: pointer;
+    font-size: 13px;
+    color: var(--text2);
+    border-left: 2px solid transparent;
+    transition: all 0.1s;
+    user-select: none;
+  }
+  .nav-item:hover { background: var(--surface2); color: var(--text); }
+  .nav-item.active {
+    background: var(--surface2);
+    color: var(--text);
+    border-left-color: var(--accent);
+    font-weight: 500;
+  }
+  .nav-badge {
+    font-size: 10px;
+    background: var(--amber-bg);
+    color: var(--amber);
+    padding: 1px 6px;
+    border-radius: 10px;
+    font-weight: 600;
+  }
+  .nav-badge.green { background: var(--green-bg); color: var(--green); }
+
+  /* ── Main content ── */
+  .main {
+    flex: 1;
+    overflow-y: auto;
+    padding: 28px 32px;
+  }
+
+  /* ── Status bar ── */
+  .status-bar {
+    background: var(--surface);
+    border-bottom: 1px solid var(--border);
+    padding: 8px 32px;
+    font-size: 12px;
+    color: var(--text2);
+    display: flex;
+    gap: 16px;
+    align-items: center;
+    flex-wrap: wrap;
+  }
+  .status-dot {
+    width: 7px; height: 7px;
+    border-radius: 50%;
+    display: inline-block;
+    margin-right: 4px;
+  }
+  .dot-green { background: var(--green); }
+  .dot-amber { background: var(--amber); }
+  .dot-grey { background: var(--text3); }
+
+  /* ── Page header ── */
+  .page-header { margin-bottom: 24px; }
+  .page-title { font-family: var(--font); font-size: 24px; font-weight: normal; margin-bottom: 4px; }
+  .page-sub { font-size: 13px; color: var(--text2); }
+
+  /* ── Metric cards ── */
+  .metrics { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 24px; }
+  .metric-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    padding: 16px 20px;
+    box-shadow: var(--shadow);
+  }
+  .metric-val { font-family: var(--font); font-size: 26px; font-weight: normal; margin-bottom: 2px; letter-spacing: -0.02em; }
+  .metric-lbl { font-size: 11px; color: var(--text2); text-transform: uppercase; letter-spacing: 0.05em; }
+  .metric-sub { font-size: 11px; color: var(--text3); margin-top: 2px; }
+
+  /* ── Cards ── */
+  .card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    box-shadow: var(--shadow);
+    overflow: hidden;
+  }
+  .card-header {
+    padding: 16px 20px;
+    border-bottom: 1px solid var(--border);
+    font-weight: 500;
+    font-size: 13px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+  .card-body { padding: 0; }
+  .two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 20px; }
+
+  /* ── Table rows ── */
+  .tbl-header {
+    display: grid;
+    padding: 8px 16px;
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 0.07em;
+    text-transform: uppercase;
+    color: var(--text3);
+    border-bottom: 1px solid var(--border);
+    background: var(--surface2);
+  }
+  .sort-col {
+    text-align: right;
+    cursor: pointer;
+    user-select: none;
+    text-decoration: underline;
+    text-underline-offset: 2px;
+  }
+  .sort-col[data-active="true"] {
+    color: var(--text);
+  }
+  .sort-col::after {
+    content: '';
+  }
+  .sort-col[data-active="true"]::after {
+    content: ' ▼';
+  }
+  .tbl-row {
+    display: grid;
+    padding: 9px 16px;
+    font-size: 13px;
+    border-bottom: 1px solid var(--border);
+    align-items: center;
+    transition: background 0.1s;
+  }
+  .tbl-row:last-child { border-bottom: none; }
+  .tbl-row:hover { background: var(--surface2); }
+  .tbl-row.faded { opacity: 0.38; }
+
+  /* ── Form controls ── */
+  select, input[type=text], input[type=date], input[type=search] {
+    font-family: var(--font-sans);
+    font-size: 13px;
+    color: var(--text);
+    background: var(--surface);
+    border: 1px solid var(--border2);
+    border-radius: var(--radius);
+    padding: 6px 10px;
+    outline: none;
+    transition: border-color 0.15s;
+  }
+  select:focus, input:focus { border-color: var(--accent); }
+  .search-input {
+    width: 100%;
+    padding: 8px 12px 8px 32px;
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    font-size: 13px;
+    position: relative;
+  }
+  .search-wrap { position: relative; flex: 1; }
+  .search-wrap::before {
+    content: '⌕';
+    position: absolute;
+    left: 10px;
+    top: 50%;
+    transform: translateY(-50%);
+    color: var(--text3);
+    font-size: 16px;
+    pointer-events: none;
+  }
+
+  /* ── Filter bar ── */
+  .filter-bar {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    margin-bottom: 14px;
+    flex-wrap: wrap;
+  }
+  .date-filter {
+    display: flex;
+    gap: 6px;
+    align-items: center;
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 6px 12px;
+    font-size: 12px;
+    color: var(--text2);
+    flex-wrap: wrap;
+    margin-bottom: 14px;
+  }
+  .date-filter input[type=date] { font-size: 12px; padding: 3px 6px; }
+  .date-filter select { font-size: 12px; padding: 3px 6px; }
+  .filter-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    background: var(--amber-bg);
+    color: var(--amber);
+    font-size: 11px;
+    padding: 2px 8px;
+    border-radius: 10px;
+    font-weight: 500;
+  }
+
+  /* ── Tags ── */
+  .tag {
+    display: inline-block;
+    padding: 1px 7px;
+    border-radius: 10px;
+    font-size: 10px;
+    font-weight: 600;
+    vertical-align: middle;
+    margin-left: 4px;
+  }
+  .tag-new { background: var(--amber-bg); color: var(--amber); }
+  .tag-ok { background: var(--green-bg); color: var(--green); }
+
+  /* ── Progress bar ── */
+  .progress { height: 4px; background: var(--surface2); border-radius: 2px; overflow: hidden; margin: 6px 0 10px; }
+  .progress-fill { height: 100%; background: var(--accent); border-radius: 2px; transition: width 0.4s; }
+
+  /* ── Amount colours ── */
+  .debit { color: var(--red); }
+  .credit { color: var(--green); }
+
+  /* ── Pager ── */
+  .pager {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 8px;
+    padding: 12px 16px;
+    border-top: 1px solid var(--border);
+    font-size: 12px;
+    color: var(--text2);
+  }
+
+  /* ── Toast ── */
+  #toast {
+    position: fixed;
+    bottom: 24px;
+    right: 24px;
+    background: var(--accent);
+    color: #fff;
+    padding: 10px 18px;
+    border-radius: var(--radius);
+    font-size: 13px;
+    z-index: 999;
+    opacity: 0;
+    transform: translateY(8px);
+    transition: opacity 0.2s, transform 0.2s;
+    pointer-events: none;
+  }
+  #toast.show { opacity: 1; transform: translateY(0); }
+
+  /* ── Empty state ── */
+  .empty {
+    padding: 48px 24px;
+    text-align: center;
+    color: var(--text2);
+  }
+  .empty-icon { font-size: 36px; margin-bottom: 12px; opacity: 0.4; }
+  .empty h3 { font-family: var(--font); font-size: 18px; font-weight: normal; margin-bottom: 6px; color: var(--text); }
+  .empty p { font-size: 13px; line-height: 1.6; max-width: 360px; margin: 0 auto 20px; }
+
+  /* ── Steps ── */
+  .steps { display: flex; flex-direction: column; gap: 0; }
+  .step { display: flex; gap: 16px; padding: 14px 0; border-bottom: 1px solid var(--border); }
+  .step:last-child { border-bottom: none; }
+  .step-num {
+    width: 28px; height: 28px;
+    border-radius: 50%;
+    background: var(--surface2);
+    border: 1px solid var(--border2);
+    display: flex; align-items: center; justify-content: center;
+    font-size: 12px; font-weight: 600;
+    flex-shrink: 0;
+    color: var(--text2);
+  }
+  .step-num.active { background: var(--accent); color: #fff; border-color: var(--accent); }
+  .step-title { font-weight: 500; font-size: 13px; margin-bottom: 3px; }
+  .step-desc { font-size: 12px; color: var(--text2); line-height: 1.5; }
+
+  /* ── Category browse selector ── */
+  .cat-select-large {
+    font-size: 16px;
+    font-weight: 500;
+    padding: 8px 12px;
+    border-radius: var(--radius);
+    margin-bottom: 16px;
+    border: 1px solid var(--border2);
+    background: var(--surface);
+    max-width: 360px;
+  }
+
+  /* ── Auto-save indicator ── */
+  .autosave {
+    font-size: 11px;
+    color: var(--text3);
+    display: flex;
+    align-items: center;
+    gap: 4px;
+  }
+  .autosave.saving { color: var(--amber); }
+  .autosave.saved { color: var(--green); }
+
+  /* ── Responsive tweaks ── */
+  @media (max-width: 900px) {
+    .metrics { grid-template-columns: repeat(2,1fr); }
+    .two-col { grid-template-columns: 1fr; }
+    .sidebar { width: 160px; }
+    .main { padding: 20px 16px; }
+  }
+</style>
+</head>
+<body>
+
+<!-- Header -->
+<div class="header">
+  <div style="display:flex;align-items:center">
+    <span class="header-title">Spending Categoriser</span>
+    <span class="header-sub" id="header-sub">No data loaded</span>
+  </div>
+  <div class="header-actions">
+    <span class="autosave" id="autosave-indicator">
+      <span id="autosave-dot" class="status-dot dot-grey"></span>
+      <span id="autosave-txt">IndexedDB</span>
+    </span>
+    <label class="btn btn-ghost" style="cursor:pointer">
+      Import Snoop
+      <input type="file" accept=".xls,.xlsx,.csv" style="display:none" onchange="handleImport(event)">
+    </label>
+    <button class="btn btn-ghost" onclick="exportZip()">Export backup</button>
+    <label class="btn btn-ghost" style="cursor:pointer">Import backup<input type="file" accept=".zip" style="display:none" onchange="importZip(event)"></label>
+    <button class="btn btn-ghost" onclick="exportCSV()">Export CSV</button>
+  </div>
+</div>
+
+<!-- Status bar -->
+<div class="status-bar" id="status-bar">
+  <span><span class="status-dot dot-grey"></span>No transactions loaded — import your Snoop export to begin</span>
+</div>
+
+<!-- Layout -->
+<div class="layout">
+  <!-- Sidebar -->
+  <nav class="sidebar">
+    <div class="nav-section">
+      <div class="nav-label">Analysis</div>
+      <div class="nav-item active" onclick="showTab('overview',this)">Overview</div>
+      <div class="nav-item" onclick="showTab('browse',this)">Browse by category</div>
+    </div>
+    <div class="nav-section">
+      <div class="nav-label">Categorise</div>
+      <div class="nav-item" onclick="showTab('unmapped',this)">
+        Unmapped merchants
+        <span class="nav-badge" id="nav-unmapped-badge" style="display:none">0</span>
+      </div>
+      <div class="nav-item" onclick="showTab('transactions',this)">All transactions</div>
+    </div>
+    <div class="nav-section">
+      <div class="nav-label">Settings</div>
+      <div class="nav-item" onclick="showTab('merchants',this)">Merchant mapping</div>
+      <div class="nav-item" onclick="showTab('help',this)">Help</div>
+    </div>
+  </nav>
+
+  <!-- Main -->
+  <div class="main" id="main-content">
+    <!-- Content rendered by JS -->
+  </div>
+</div>
+
+<div id="toast"></div>
+
+<script>
+// ═══════════════════════════════════════════════════════════════
+// CONSTANTS
+// ═══════════════════════════════════════════════════════════════
+const CATS = [
+  "Groceries","Eating Out","Food & Drink (Specialist)",
+  "Shopping (Clothing)","Shopping (General)",
+  "Health & Wellbeing","Health & Beauty",
+  "Pets","Utilities","Telecoms & Subscriptions",
+  "Transport","Travel","Entertainment & Culture",
+  "Home & Maintenance","Building Work","Insurance",
+  "Charity & Giving","Professional & Financial",
+  "Savings & Investments","Council Tax",
+  "Girls Support","SW Annuity","Income",
+  "Internal Transfers","Income Tax","Accounting","General"
+];
+
+const EXCLUDE = new Set([
+  "Income","Internal Transfers","SW Annuity",
+  "Income Tax","Savings & Investments","Girls Support","Accounting"
+]);
+
+const INIT_MAP = {
+  "Payment Received - Thank You":"Internal Transfers","404779":"Internal Transfers",
+  "First Direct Credit Card":"Internal Transfers","American Express":"Internal Transfers",
+  "Direct Debit Payment":"Internal Transfers","Lloyds Ultra":"Internal Transfers",
+  "Platinum Credit Card":"Internal Transfers",
+  "Railpen":"Income","Scottish Widows":"SW Annuity","Interest":"Income",
+  "Hargreaves Lansdown":"Savings & Investments","NS&I Premium Bonds":"Savings & Investments",
+  "Waitrose & Partners":"Groceries","Milk & More":"Groceries","Marks & Spencer":"Groceries",
+  "Abel & Cole":"Groceries","Ocado":"Groceries","Nonna Tonda":"Groceries","Tesco":"Groceries",
+  "New Malden Fish Bar New Malden":"Groceries","Swiss Bread BA":"Groceries","Riverford":"Groceries",
+  "Sainsbury's":"Groceries","Lidl":"Groceries","Aldi":"Groceries","Co-op":"Groceries","Morrisons":"Groceries",
+  "SP Wylde Market":"Food & Drink (Specialist)","SP Sous Chef":"Food & Drink (Specialist)",
+  "SP Pipers Farm Devon":"Food & Drink (Specialist)","SP The Cornish Seawe Penzance":"Food & Drink (Specialist)",
+  "SP Wild BY Tart":"Food & Drink (Specialist)","SP Eversfield Org Okehampton":"Food & Drink (Specialist)",
+  "Parsnips - Del":"Food & Drink (Specialist)","Suttles OF Malden":"Food & Drink (Specialist)",
+  "Mindful Chef":"Food & Drink (Specialist)",
+  "Pret a Manger":"Eating Out","Pizza Express":"Eating Out","Windmill Tearooms":"Eating Out",
+  "Costa Coffee":"Eating Out","Avoca Belfast":"Eating Out","Caffe Nero":"Eating Out",
+  "Gails Bakery":"Eating Out","Cafe Galio":"Eating Out","Nespresso":"Eating Out",
+  "Al Forno":"Eating Out","Brasserie Zedel":"Eating Out","Babylon 76 78":"Eating Out",
+  "Barnaby And Boo's":"Eating Out","Bovingdons":"Eating Out","NI Food TO":"Eating Out",
+  "Mirabilia":"Eating Out","Btp Foodse":"Eating Out","Manomaydes":"Eating Out",
+  "Aaggsa Lim":"Eating Out","Studio Rea":"Eating Out","Miss Polly":"Eating Out",
+  "Ohpioneerk":"Eating Out","Wilkinson":"Eating Out","Gillianboy":"Eating Out",
+  "Njfield LT":"Eating Out","*Jj Wellcarnew Malden":"Eating Out","J&J Wellca":"Eating Out",
+  "EL Cafetal":"Eating Out","The Longstore St. Austell":"Eating Out",
+  "White Stuff":"Shopping (Clothing)","Seasalt":"Shopping (Clothing)","Boden":"Shopping (Clothing)",
+  "H&M":"Shopping (Clothing)","UNIQLO":"Shopping (Clothing)","Bravissimo":"Shopping (Clothing)",
+  "Celtic & Co. NA":"Shopping (Clothing)","Crew Clothing":"Shopping (Clothing)",
+  "Regatta":"Shopping (Clothing)","La Redoute":"Shopping (Clothing)","Rieker":"Shopping (Clothing)",
+  "Amazon":"Shopping (General)","Apple":"Shopping (General)","John Lewis":"Shopping (General)",
+  "WH Smith":"Shopping (General)","Etsy":"Shopping (General)","eBay":"Shopping (General)",
+  "Costco":"Shopping (General)","ProCook":"Shopping (General)","Lakeland":"Shopping (General)",
+  "Dobbies Garden Centres":"Shopping (General)",
+  "Amazon Prime":"Telecoms & Subscriptions","Amazon Prime Video":"Telecoms & Subscriptions",
+  "EE":"Telecoms & Subscriptions","O2":"Telecoms & Subscriptions","Virgin Media":"Telecoms & Subscriptions",
+  "Netflix":"Telecoms & Subscriptions","Now":"Telecoms & Subscriptions",
+  "Tidal Oslo":"Telecoms & Subscriptions","Tidal*Tidal Premium Glo Oslo":"Telecoms & Subscriptions",
+  "The Fast 800":"Telecoms & Subscriptions","TV Licensing":"Telecoms & Subscriptions",
+  "Boots":"Health & Wellbeing","Groves Pharmacy":"Health & Wellbeing","Groves Pharmacy NE":"Health & Wellbeing",
+  "Holland And Barrett":"Health & Wellbeing","The Dentist @ Kt3":"Health & Wellbeing",
+  "Eye Contact":"Health & Wellbeing","Newson Health Ltd Stratford-Upon":"Health & Wellbeing",
+  "The Private GP Group":"Health & Wellbeing","Gocardless":"Health & Wellbeing",
+  "Colette":"Health & Beauty","Sarah Hall":"Health & Beauty",
+  "Thaveethaispa.Com":"Health & Beauty","Thaveethaispa.":"Health & Beauty",
+  "Spmassage.Co.Uk/":"Health & Beauty",
+  "Lintbells Hitchin":"Pets","Tails.com":"Pets","VioVet":"Pets","Kingston Vets":"Pets",
+  "Barkers K9":"Pets","Barkers Worcester Park":"Pets","Barkers":"Pets",
+  "Pets Corner":"Pets","Pet Drugs Online":"Pets","Karen Kebbell":"Pets",
+  "Octopus Energy":"Utilities",
+  "TFL":"Transport","RingGo":"Transport","Motor Fuel Group":"Transport","Uber":"Transport",
+  "Apcoa Parking":"Transport","DVLA":"Transport","Westbury Garage":"Transport",
+  "Trainline":"Transport","Shell":"Transport","BP":"Transport","Esso":"Transport",
+  "M6 Toll":"Transport","Heathrow Parking":"Transport",
+  "British Airways":"Travel","Booking.com":"Travel","Viator":"Travel","easyJet":"Travel",
+  "Airbnb":"Travel","Ski Solutions":"Travel","Translink Fare Cha":"Travel","Translink Tvm":"Travel",
+  "Hmshost Belfast CI":"Travel","Seed Belfast City":"Travel",
+  "Barefoot Living Burnham Market":"Travel","Barefoot Norfolk Ltd Burnham Market":"Travel",
+  "Barefoot Retreats":"Travel","Maryville":"Travel",
+  "3Cpayment*No 1 York 000 Bath":"Travel","Duffin Cove Oceanfront Tofino":"Travel","Travelex":"Travel",
+  "Ronnie Scotts Club 47 F":"Entertainment & Culture","Ronnie Scotts Club":"Entertainment & Culture",
+  "Ronnie Scott S":"Entertainment & Culture","Cadogan Hall":"Entertainment & Culture",
+  "Royal Albert Hall":"Entertainment & Culture","Rose Theatre Kingston":"Entertainment & Culture",
+  "V&A":"Entertainment & Culture","Southbank Centre":"Entertainment & Culture",
+  "Curzon Wimbledon":"Entertainment & Culture","National Trust":"Entertainment & Culture",
+  "London Theatre Direct":"Entertainment & Culture","LW Theatres":"Entertainment & Culture",
+  "WeGotTickets":"Entertainment & Culture","Encore Tickets":"Entertainment & Culture",
+  "Ingresso.Co.Uk":"Entertainment & Culture","The Place":"Entertainment & Culture",
+  "RS Window Cleaning":"Home & Maintenance","A Carpenter":"Home & Maintenance",
+  "Bls*Magicman Holdings L":"Home & Maintenance",
+  "Kolaris":"Building Work","Todi & Boys":"Building Work",
+  "Love Your Home Godalming":"Building Work","Dave Tierney Roof":"Building Work",
+  "Infidelity":"Building Work",
+  "Aviva Health Insurance":"Insurance","Coverwise":"Insurance",
+  "Rock Insurance":"Insurance","Hiscox":"Insurance","The AA":"Insurance",
+  "Guide Dogs for the Blind":"Charity & Giving","WWF":"Charity & Giving",
+  "RSPCA":"Charity & Giving","Battersea Dogs & Cats":"Charity & Giving",
+  "Children's Society":"Charity & Giving","Cancer Research UK":"Charity & Giving",
+  "Oxfam":"Charity & Giving","Royal British Legion":"Charity & Giving",
+  "Save The Children":"Charity & Giving",
+  "Non-Sterling Transaction Fee":"Professional & Financial",
+  "Cashback Rebate":"Professional & Financial",
+  "American Express (Membership Fee)":"Professional & Financial",
+  "Royal Borough of Kingston upon Thames":"Council Tax"
+};
+
+// ═══════════════════════════════════════════════════════════════
+// STATE
+// ═══════════════════════════════════════════════════════════════
+let S = {
+  txs: [],
+  mapping: {...INIT_MAP},
+  dateFrom: '',
+  dateTo: '',
+  activeTab: 'overview',
+  umSort: 'spend',
+  umSearch: '',
+  umPage: 1,
+  brCat: 'Groceries',
+  brSearch: '',
+  brPage: 1,
+  txSearch: '',
+  txCat: '',
+  txPage: 1,
+  mSearch: '',
+  mPage: 1
+};
+
+let saveTimer = null;
+
+// ═══════════════════════════════════════════════════════════════
+// INDEXEDDB
+// ═══════════════════════════════════════════════════════════════
+let db = null;
+const DB_NAME = 'spending-categoriser';
+const DB_VER = 1;
+
+function openDB(){
+  return new Promise((res,rej)=>{
+    const req = indexedDB.open(DB_NAME, DB_VER);
+    req.onupgradeneeded = e => {
+      const d = e.target.result;
+      if(!d.objectStoreNames.contains('data')) d.createObjectStore('data');
+    };
+    req.onsuccess = e => { db = e.target.result; res(db); };
+    req.onerror = e => rej(e);
+  });
+}
+
+function dbGet(key){
+  return new Promise((res,rej)=>{
+    const tx = db.transaction('data','readonly');
+    const req = tx.objectStore('data').get(key);
+    req.onsuccess = e => res(e.target.result);
+    req.onerror = e => rej(e);
+  });
+}
+
+function dbSet(key, val){
+  return new Promise((res,rej)=>{
+    const tx = db.transaction('data','readwrite');
+    const req = tx.objectStore('data').put(val, key);
+    req.onsuccess = () => res();
+    req.onerror = e => rej(e);
+  });
+}
+
+async function loadFromDB(){
+  try {
+    const txs = await dbGet('txs');
+    const mapping = await dbGet('mapping');
+    if(txs && txs.length) {
+      S.txs = txs;
+      // Migration: rename legacy/duplicate category names
+      const RENAMES = {
+        'Charity':               'Charity & Giving',
+        'Entertainment':         'Entertainment & Culture',
+        'Health Insurance':      'Insurance',
+        'Cocuncil tax':          'Council Tax',
+        'ISA':                   'Savings & Investments',
+        'Beauty & Personal Care':'Health & Beauty',
+      };
+      S.txs.forEach(t=>{
+        if(t.ourCat && RENAMES[t.ourCat]) t.ourCat = RENAMES[t.ourCat];
+        if(t.snoopCat && RENAMES[t.snoopCat]) t.snoopCat = RENAMES[t.snoopCat];
+      });
+      // Migration: for transactions that don't have mappingDerived set yet,
+      // infer it — if ourCat matches what the mapping says, it was mapping-derived
+      const workingMap = mapping ? {...INIT_MAP, ...mapping} : INIT_MAP;
+      S.txs.forEach(t=>{
+        if(t.mappingDerived === undefined && t.ourCat && t.merchant) {
+          t.mappingDerived = (workingMap[t.merchant] === t.ourCat);
+        }
+      });
+    }
+    if(mapping) {
+      // Also rename any legacy values in the mapping itself
+      const RENAMES = {
+        'Charity':'Charity & Giving','Entertainment':'Entertainment & Culture',
+        'Health Insurance':'Insurance','Cocuncil tax':'Council Tax',
+        'ISA':'Savings & Investments','Beauty & Personal Care':'Health & Beauty',
+      };
+      const cleaned = {};
+      Object.entries({...INIT_MAP, ...mapping}).forEach(([k,v])=>{
+        cleaned[k] = RENAMES[v] || v;
+      });
+      S.mapping = cleaned;
+    }
+    setAutosave('saved', 'Auto-saved');
+  } catch(e) {
+    console.warn('DB load failed', e);
+  }
+}
+
+function scheduleSave(){
+  setAutosave('saving', 'Saving...');
+  clearTimeout(saveTimer);
+  saveTimer = setTimeout(async ()=>{
+    try {
+      await dbSet('txs', S.txs);
+      await dbSet('mapping', S.mapping);
+      setAutosave('saved', 'Saved');
+    } catch(e) {
+      setAutosave('', 'Save failed');
+      console.error('DB save failed', e);
+    }
+  }, 800);
+}
+
+function setAutosave(state, txt){
+  const dot = document.getElementById('autosave-dot');
+  const label = document.getElementById('autosave-txt');
+  const ind = document.getElementById('autosave-indicator');
+  if(!dot) return;
+  dot.className = 'status-dot ' + (state==='saved'?'dot-green':state==='saving'?'dot-amber':'dot-grey');
+  ind.className = 'autosave ' + state;
+  label.textContent = txt;
+}
+
+// ═══════════════════════════════════════════════════════════════
+// HELPERS
+// ═══════════════════════════════════════════════════════════════
+const txKey = t => t.date+'|'+t.description+'|'+t.amount;
+const eff   = t => t.ourCat || t.snoopCat || 'General';
+const fmt   = n => '£'+Math.abs(n).toLocaleString('en-GB',{minimumFractionDigits:2,maximumFractionDigits:2});
+const inRange = t => (!S.dateFrom||t.date>=S.dateFrom)&&(!S.dateTo||t.date<=S.dateTo);
+
+function catOpts(sel){
+  return CATS.map(c=>`<option value="${c}"${c===sel?' selected':''}>${c}</option>`).join('');
+}
+
+function esc(s){ return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+
+function normalise(r){
+  const o={};
+  Object.keys(r).forEach(k=>o[k.trim()]=r[k]);
+  return o;
+}
+
+function applyMapping(){
+  // Re-apply mapping to all transactions:
+  // - If ourCat is null → set from mapping
+  // - If ourCat was set by mapping (mappingDerived=true) → update if mapping changed
+  // - If ourCat was set manually (mappingDerived=false) → leave alone
+  S.txs.forEach(t=>{
+    if(!t.merchant) return;
+    const mapped = S.mapping[t.merchant];
+    if(!mapped) return;
+    if(!t.ourCat || t.mappingDerived) {
+      t.ourCat = mapped;
+      t.mappingDerived = true;
+    }
+  });
+}
+
+// Description-based mapping — for no-merchant transactions (BACS, bank transfers)
+// Matched case-insensitively against description
+const DESC_MAP = [
+  { match: 'MISS H BISHOP',      cat: 'Girls Support' },
+  { match: 'MISS E G BISHOP',    cat: 'Girls Support' },
+  { match: 'MISS C E BISHOP',    cat: 'Girls Support' },
+  { match: 'MISS E BISHOP',      cat: 'Girls Support' },
+  { match: 'KAREN KEBBELL',      cat: 'Pets' },
+  { match: 'Kolaris',            cat: 'Building Work' },
+  { match: 'Todi & Boys',        cat: 'Building Work' },
+  { match: 'Dave Tierney Roof',  cat: 'Building Work' },
+  { match: 'All About Roofcare', cat: 'Building Work' },
+  { match: 'THAMES WTR',         cat: 'Utilities' },
+  { match: 'David Steed',        cat: 'Pets' },
+  { match: 'Drake & Co',         cat: 'Accounting' },
+  { match: 'DECLARATIVE SOLUTI', cat: 'Income' },
+];
+
+function applyDescMapping(){
+  S.txs.forEach(t=>{
+    if(t.merchant) return;                        // only for no-merchant transactions
+    if(t.ourCat && !t.mappingDerived) return;     // don't override manual categorisations
+    const desc = (t.description || '').toLowerCase();
+    for(const rule of DESC_MAP){
+      if(desc.includes(rule.match.toLowerCase())){
+        t.ourCat = rule.cat;
+        t.mappingDerived = true;
+        break;
+      }
+    }
+  });
+}
+
+function parseDate(v){
+  if(!v) return '';
+  if(v instanceof Date) return v.toISOString().substring(0,10);
+  const s = String(v);
+  return s.length>=10 && s[4]==='-' ? s.substring(0,10) : s.substring(0,10);
+}
+
+function getUnmapped(){
+  const g={};
+  S.txs.forEach(t=>{
+    if(!t.merchant || typeof t.merchant !== 'string') return;
+    if(S.mapping.hasOwnProperty(t.merchant)) return;
+    if(!g[t.merchant]) g[t.merchant]={merchant:t.merchant,count:0,spend:0,cats:new Set(),hasNew:false,latestDate:''};
+    g[t.merchant].count++;
+    if(t.amount<0) g[t.merchant].spend += Math.abs(t.amount);
+    g[t.merchant].cats.add(t.snoopCat);
+    if(t.isNew) g[t.merchant].hasNew = true;
+    if(t.date > g[t.merchant].latestDate) g[t.merchant].latestDate = t.date;
+  });
+  return Object.values(g);
+}
+
+function toast(msg){
+  const el = document.getElementById('toast');
+  el.textContent = msg;
+  el.classList.add('show');
+  setTimeout(()=>el.classList.remove('show'), 2200);
+}
+
+function updateStatusBar(){
+  const ug = getUnmapped();
+  const mapped = S.txs.filter(t=>t.ourCat).length;
+  const pct = S.txs.length ? Math.round(mapped/S.txs.length*100) : 0;
+  const newCount = S.txs.filter(t=>t.isNew).length;
+
+  // Nav badge
+  const badge = document.getElementById('nav-unmapped-badge');
+  if(badge){
+    badge.style.display = ug.length ? 'inline' : 'none';
+    badge.textContent = ug.length;
+  }
+
+  document.getElementById('status-bar').innerHTML = S.txs.length === 0
+    ? `<span><span class="status-dot dot-grey"></span>No transactions loaded</span>`
+    : `<span><span class="status-dot dot-green"></span>${S.txs.length.toLocaleString()} transactions</span>
+       <span style="color:var(--text3)">·</span>
+       <span>${ug.length} unmapped merchants</span>
+       <span style="color:var(--text3)">·</span>
+       <span>${pct}% mapped</span>
+       ${newCount ? `<span style="color:var(--text3)">·</span><span class="tag tag-new">${newCount} new</span>` : ''}`;
+
+  document.getElementById('header-sub').textContent = S.txs.length
+    ? ` — ${S.txs.length.toLocaleString()} transactions`
+    : ' — No data loaded';
+}
+
+// ═══════════════════════════════════════════════════════════════
+// IMPORT
+// ═══════════════════════════════════════════════════════════════
+function parseXLS(file){
+  return new Promise((res,rej)=>{
+    const r = new FileReader();
+    r.onload = e => {
+      try {
+        const wb = XLSX.read(e.target.result,{type:'array',cellDates:true});
+        res(XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]],{raw:true}).map(normalise));
+      } catch(err){ rej(err); }
+    };
+    r.readAsArrayBuffer(file);
+  });
+}
+
+async function handleImport(evt){
+  const file = evt.target.files[0]; if(!file) return;
+  toast('Importing...');
+  try {
+    const rows = await parseXLS(file);
+    const incoming = rows.map(r=>({
+      date: parseDate(r['Date']),
+      merchant: r['Merchant Name']||null,
+      description: String(r['Description']||''),
+      amount: typeof r['Amount']==='number' ? r['Amount'] : parseFloat(String(r['Amount']||'').replace(/[^0-9.-]/g,''))||0,
+      snoopCat: r['Category']||'General',
+      ourCat: null,
+      account: r['Account Name']||'',
+      provider: r['Account Provider']||'',
+      isNew: false
+    }));
+    const existing = new Map(S.txs.map(t=>[txKey(t),t]));
+    let added = 0;
+    incoming.forEach(t=>{
+      const k = txKey(t);
+      if(!existing.has(k)){ t.isNew=true; S.txs.push(t); added++; existing.set(k,t); }
+    });
+    applyMapping();
+    applyDescMapping();
+    scheduleSave();
+    updateStatusBar();
+    render();
+    toast(`Import complete — ${added} new transactions`);
+  } catch(e){ alert('Import error: '+e.message); }
+  evt.target.value = '';
+}
+
+// ═══════════════════════════════════════════════════════════════
+// EXPORT
+// ═══════════════════════════════════════════════════════════════
+function toCSV(rows){ return rows.map(r=>r.map(v=>'"'+String(v==null?'':v).replace(/"/g,'""')+'"').join(',')).join('\n'); }
+
+function exportCSV(){
+  if(!S.txs.length){ alert('No data to export'); return; }
+  const rows=[['Date','Merchant','Description','Amount','Our Category','Snoop Category','Account','Provider']];
+  S.txs.forEach(t=>rows.push([t.date,t.merchant||'',t.description,t.amount,eff(t),t.snoopCat,t.account,t.provider]));
+  dl(toCSV(rows),'text/csv','spending-history.csv');
+  toast('CSV exported');
+}
+
+function exportZip(){
+  if(!S.txs.length){ alert('No data to export'); return; }
+  const rows=[['Date','Merchant','Description','Amount','Our Category','Snoop Category','Account','Provider']];
+  S.txs.forEach(t=>rows.push([t.date,t.merchant||'',t.description,t.amount,eff(t),t.snoopCat,t.account,t.provider]));
+  const csvBytes = strToBytes(toCSV(rows));
+  const jsonBytes = strToBytes(JSON.stringify(S.mapping,null,2));
+  const zip = buildZip([
+    {name:'spending-history.csv',data:csvBytes},
+    {name:'spending-mapping.json',data:jsonBytes}
+  ]);
+  dl(zip,'application/zip','spending-backup-'+new Date().toISOString().substring(0,10)+'.zip');
+  toast('Backup exported');
+}
+
+function dl(content, type, name){
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([content],{type}));
+  a.download = name;
+  a.click();
+}
+
+// ═══════════════════════════════════════════════════════════════
+// ZIP BUILDER (pure JS)
+// ═══════════════════════════════════════════════════════════════
+function strToBytes(str){ return new TextEncoder().encode(str); }
+
+function crc32(buf){
+  if(!crc32.t){
+    crc32.t = new Uint32Array(256);
+    for(let i=0;i<256;i++){
+      let c=i;
+      for(let j=0;j<8;j++) c=c&1?(0xEDB88320^(c>>>1)):(c>>>1);
+      crc32.t[i]=c;
+    }
+  }
+  let c=0xFFFFFFFF;
+  for(let i=0;i<buf.length;i++) c=crc32.t[(c^buf[i])&0xFF]^(c>>>8);
+  return (c^0xFFFFFFFF)>>>0;
+}
+
+function u16(n){return[n&0xFF,(n>>8)&0xFF];}
+function u32(n){return[n&0xFF,(n>>8)&0xFF,(n>>16)&0xFF,(n>>24)&0xFF];}
+
+function buildZip(files){
+  const parts=[], cd=[];
+  let off=0;
+  const now=new Date();
+  const dd=(((now.getFullYear()-1980)<<9)|((now.getMonth()+1)<<5)|now.getDate());
+  const dt=((now.getHours()<<11)|(now.getMinutes()<<5)|(now.getSeconds()>>1));
+  for(const f of files){
+    const nb=strToBytes(f.name);
+    const crc=crc32(f.data);
+    const lh=new Uint8Array([0x50,0x4B,0x03,0x04,20,0,0,0,0,0,...u16(dt),...u16(dd),...u32(crc),...u32(f.data.length),...u32(f.data.length),...u16(nb.length),0,0,...nb]);
+    cd.push({nb,crc,size:f.data.length,off,dd,dt});
+    parts.push(lh,f.data);
+    off+=lh.length+f.data.length;
+  }
+  const cde=cd.map(e=>new Uint8Array([0x50,0x4B,0x01,0x02,20,0,20,0,0,0,0,0,...u16(e.dt),...u16(e.dd),...u32(e.crc),...u32(e.size),...u32(e.size),...u16(e.nb.length),0,0,0,0,0,0,0,0,0,0,...u32(e.off),...e.nb]));
+  const cds=cde.reduce((s,e)=>s+e.length,0);
+  const eocd=new Uint8Array([0x50,0x4B,0x05,0x06,0,0,0,0,...u16(files.length),...u16(files.length),...u32(cds),...u32(off),0,0]);
+  const total=[...parts,...cde,eocd].reduce((s,p)=>s+p.length,0);
+  const out=new Uint8Array(total); let pos=0;
+  for(const p of [...parts,...cde,[eocd]]){ out.set(p,pos); pos+=p.length; }
+  return out;
+}
+
+function readZip(bytes){
+  // Returns [{name, text}]
+  const dec = new TextDecoder();
+  const files = [];
+  // Find end of central directory
+  let eocdPos = -1;
+  for(let i=bytes.length-22;i>=0;i--){
+    if(bytes[i]===0x50&&bytes[i+1]===0x4B&&bytes[i+2]===0x05&&bytes[i+3]===0x06){ eocdPos=i; break; }
+  }
+  if(eocdPos<0) return files;
+  const cdOffset = bytes[eocdPos+16]|(bytes[eocdPos+17]<<8)|(bytes[eocdPos+18]<<16)|(bytes[eocdPos+19]<<24);
+  const cdCount  = bytes[eocdPos+8]|(bytes[eocdPos+9]<<8);
+  let pos = cdOffset;
+  for(let i=0;i<cdCount;i++){
+    if(bytes[pos]!==0x50||bytes[pos+1]!==0x4B||bytes[pos+2]!==0x01||bytes[pos+3]!==0x02) break;
+    const nameLen    = bytes[pos+28]|(bytes[pos+29]<<8);
+    const extraLen   = bytes[pos+30]|(bytes[pos+31]<<8);
+    const commentLen = bytes[pos+32]|(bytes[pos+33]<<8);
+    const localOff   = bytes[pos+42]|(bytes[pos+43]<<8)|(bytes[pos+44]<<16)|(bytes[pos+45]<<24);
+    const fname      = dec.decode(bytes.slice(pos+46, pos+46+nameLen));
+    pos += 46+nameLen+extraLen+commentLen;
+    const lnameLen  = bytes[localOff+26]|(bytes[localOff+27]<<8);
+    const lextraLen = bytes[localOff+28]|(bytes[localOff+29]<<8);
+    const dataStart = localOff+30+lnameLen+lextraLen;
+    const size      = bytes[localOff+22]|(bytes[localOff+23]<<8)|(bytes[localOff+24]<<16)|(bytes[localOff+25]<<24);
+    files.push({ name: fname, text: dec.decode(bytes.slice(dataStart, dataStart+size)) });
+  }
+  return files;
+}
+
+async function importZip(evt){
+  const file = evt.target.files[0]; if(!file) return;
+  try {
+    const buf = await file.arrayBuffer();
+    const files = readZip(new Uint8Array(buf));
+    let csvText = '', jsonText = '';
+    files.forEach(f=>{
+      if(f.name.endsWith('.csv'))  csvText  = f.text;
+      if(f.name.endsWith('.json')) jsonText = f.text;
+    });
+    if(jsonText){
+      const imported = JSON.parse(jsonText);
+      S.mapping = {...INIT_MAP, ...imported};
+    }
+    if(csvText){
+      const rows = parseCSVText(csvText);
+      const loaded = rows.map(r=>({
+        date:r['Date']||'', merchant:r['Merchant']||null, description:r['Description']||'',
+        amount:parseFloat(r['Amount'])||0, snoopCat:r['Snoop Category']||'General',
+        ourCat:r['Our Category']||null, account:r['Account']||'', provider:r['Provider']||'', isNew:false
+      }));
+      // Merge with any existing transactions
+      const existing = new Map(S.txs.map(t=>[txKey(t),t]));
+      loaded.forEach(t=>{
+        const k = txKey(t);
+        if(!existing.has(k)){ S.txs.push(t); existing.set(k,t); }
+        else if(t.ourCat && !existing.get(k).ourCat) existing.get(k).ourCat = t.ourCat;
+      });
+    }
+    applyMapping();
+    applyDescMapping();
+    scheduleSave();
+    render();
+    toast(`Backup restored — ${S.txs.length.toLocaleString()} transactions, ${Object.keys(S.mapping).length} mapping rules`);
+  } catch(e){ alert('Error reading backup: '+e.message); }
+  evt.target.value = '';
+}
+
+// ═══════════════════════════════════════════════════════════════
+// NAVIGATION
+// ═══════════════════════════════════════════════════════════════
+function showTab(tab, el){
+  S.activeTab = tab;
+  document.querySelectorAll('.nav-item').forEach(n=>n.classList.remove('active'));
+  if(el) el.classList.add('active');
+  else document.querySelectorAll('.nav-item').forEach(n=>{
+    if(n.getAttribute('onclick')&&n.getAttribute('onclick').includes("'"+tab+"'")) n.classList.add('active');
+  });
+  render();
+}
+
+// ═══════════════════════════════════════════════════════════════
+// DATE FILTER
+// ═══════════════════════════════════════════════════════════════
+function dateFilterBar(id){
+  return `<div class="date-filter">
+    <strong>Period:</strong>
+    <select onchange="quickDate(this.value)" style="font-size:12px;padding:3px 6px">
+      <option value="">Quick select</option>
+      <option value="all">All time</option>
+      <option value="12m">Last 12 months</option>
+      <option value="ty">This year</option>
+      <option value="ly">Last year</option>
+    </select>
+    <span>From</span>
+    <input type="date" value="${S.dateFrom}" onchange="S.dateFrom=this.value;render()" style="font-size:12px;padding:3px 6px">
+    <span>To</span>
+    <input type="date" value="${S.dateTo}" onchange="S.dateTo=this.value;render()" style="font-size:12px;padding:3px 6px">
+    ${S.dateFrom||S.dateTo ? `
+      <button class="btn btn-sm" onclick="S.dateFrom='';S.dateTo='';render()" style="font-size:11px;padding:3px 8px">Clear</button>
+      <span class="filter-pill">● Filtered</span>` : ''}
+  </div>`;
+}
+
+function quickDate(v){
+  if(!v||v==='all'){S.dateFrom='';S.dateTo='';}
+  else {
+    const now=new Date(), y=now.getFullYear();
+    if(v==='12m'){ const f=new Date(now); f.setFullYear(y-1); S.dateFrom=f.toISOString().substring(0,10); S.dateTo=now.toISOString().substring(0,10); }
+    else if(v==='ty'){ S.dateFrom=y+'-01-01'; S.dateTo=y+'-12-31'; }
+    else if(v==='ly'){ S.dateFrom=(y-1)+'-01-01'; S.dateTo=(y-1)+'-12-31'; }
+  }
+  render();
+}
+
+// ═══════════════════════════════════════════════════════════════
+// RENDER ROUTER
+// ═══════════════════════════════════════════════════════════════
+function render(){
+  updateStatusBar();
+  const main = document.getElementById('main-content');
+  if(!S.txs.length && S.activeTab !== 'help' && S.activeTab !== 'merchants'){
+    renderWelcome(main); return;
+  }
+  if(S.activeTab==='overview') renderOverview(main);
+  else if(S.activeTab==='unmapped') renderUnmapped(main);
+  else if(S.activeTab==='browse') renderBrowse(main);
+  else if(S.activeTab==='transactions') renderTransactions(main);
+  else if(S.activeTab==='merchants') renderMerchants(main);
+  else if(S.activeTab==='help') renderHelp(main);
+}
+
+// ═══════════════════════════════════════════════════════════════
+// WELCOME
+// ═══════════════════════════════════════════════════════════════
+function renderWelcome(main){
+  main.innerHTML = `
+    <div class="page-header">
+      <div class="page-title">Welcome back</div>
+      <div class="page-sub">Import your Snoop export to get started</div>
+    </div>
+    <div style="max-width:540px">
+      <div class="card">
+        <div class="card-header">How it works</div>
+        <div class="card-body" style="padding:20px">
+          <div class="steps">
+            <div class="step">
+              <div class="step-num active">1</div>
+              <div>
+                <div class="step-title">Import Snoop export</div>
+                <div class="step-desc">Click "Import Snoop" in the top bar. Load the .xls file from Snoop. New transactions are merged in — duplicates are ignored and your existing categorisations are preserved.</div>
+              </div>
+            </div>
+            <div class="step">
+              <div class="step-num">2</div>
+              <div>
+                <div class="step-title">Map unmapped merchants</div>
+                <div class="step-desc">Go to Unmapped merchants. Assign a category once and it applies to all transactions from that merchant instantly.</div>
+              </div>
+            </div>
+            <div class="step">
+              <div class="step-num">3</div>
+              <div>
+                <div class="step-title">Review categories</div>
+                <div class="step-desc">Use Browse by category to review and recategorise individual transactions.</div>
+              </div>
+            </div>
+            <div class="step">
+              <div class="step-num">4</div>
+              <div>
+                <div class="step-title">Everything auto-saves</div>
+                <div class="step-desc">Changes are saved automatically to your browser's local storage. Next time you open this file, your data is restored instantly. Use "Export backup" for a portable zip file.</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>`;
+}
+
+// ═══════════════════════════════════════════════════════════════
+// OVERVIEW
+// ═══════════════════════════════════════════════════════════════
+function renderOverview(main){
+  const ftxs = S.txs.filter(inRange);
+  const spend = ftxs.filter(t=>!EXCLUDE.has(eff(t))&&t.amount<0);
+  const total = spend.reduce((s,t)=>s+Math.abs(t.amount),0);
+  const allMonths = [...new Set(ftxs.map(t=>t.date.substring(0,7)))].sort();
+  const months = Math.max(1, allMonths.length);
+  const byCat = {};
+  spend.forEach(t=>{ const c=eff(t); byCat[c]=(byCat[c]||0)+Math.abs(t.amount); });
+  const cats = Object.entries(byCat).sort((a,b)=>b[1]-a[1]);
+  const exclByCat = {};
+  ftxs.filter(t=>EXCLUDE.has(eff(t))&&t.amount<0).forEach(t=>{ const c=eff(t); exclByCat[c]=(exclByCat[c]||0)+Math.abs(t.amount); });
+  const exclCats = Object.entries(exclByCat).sort((a,b)=>b[1]-a[1]);
+  const ug = getUnmapped();
+  const mapped = S.txs.filter(t=>t.ourCat).length;
+  const pct = Math.round(mapped/S.txs.length*100);
+
+  main.innerHTML = `
+    <div class="page-header">
+      <div class="page-title">Overview</div>
+      <div class="page-sub">${allMonths.length ? allMonths[0]+' — '+allMonths[allMonths.length-1] : 'All time'}</div>
+    </div>
+    ${dateFilterBar('ov')}
+    <div class="metrics">
+      <div class="metric-card">
+        <div class="metric-val">${fmt(total)}</div>
+        <div class="metric-lbl">Lifestyle spend</div>
+        <div class="metric-sub">${S.dateFrom||S.dateTo?'filtered period':'all time'}</div>
+      </div>
+      <div class="metric-card">
+        <div class="metric-val">${fmt(total/months)}</div>
+        <div class="metric-lbl">Monthly average</div>
+        <div class="metric-sub">${months} months</div>
+      </div>
+      <div class="metric-card">
+        <div class="metric-val">${fmt(total/months*12)}</div>
+        <div class="metric-lbl">Annualised run rate</div>
+        <div class="metric-sub">based on ${months} months</div>
+      </div>
+      <div class="metric-card">
+        <div class="metric-val">${pct}%</div>
+        <div class="metric-lbl">Transactions mapped</div>
+        <div class="metric-sub">${ug.length} merchants pending</div>
+      </div>
+    </div>
+    <div class="two-col">
+      <div class="card">
+        <div class="card-header">
+          Lifestyle spend by category
+          <span style="font-size:11px;color:var(--text3);font-weight:normal">click to browse</span>
+        </div>
+        <div class="card-body">
+          <div class="tbl-header" style="grid-template-columns:1fr 95px 95px">
+            <span>Category</span><span style="text-align:right">Total</span><span style="text-align:right">Monthly avg</span>
+          </div>
+          ${cats.map(([c,a])=>`
+            <div class="tbl-row" style="grid-template-columns:1fr 95px 95px;cursor:pointer"
+              onclick="S.brCat='${c.replace(/'/g,"\\'")}';showTab('browse',null)">
+              <span style="color:var(--blue)">${esc(c)}</span>
+              <span style="text-align:right;font-variant-numeric:tabular-nums">${fmt(a)}</span>
+              <span style="text-align:right;font-variant-numeric:tabular-nums;color:var(--text2)">${fmt(a/months)}</span>
+            </div>`).join('')}
+          ${exclCats.length ? `
+            <div style="padding:10px 16px 4px;font-size:10px;font-weight:600;letter-spacing:0.07em;text-transform:uppercase;color:var(--text3);border-top:1px solid var(--border);margin-top:4px">
+              Excluded from lifestyle spend
+            </div>
+            ${exclCats.map(([c,a])=>`
+              <div class="tbl-row faded" style="grid-template-columns:1fr 95px 95px;cursor:pointer"
+                onclick="S.brCat='${c.replace(/'/g,"\\'")}';showTab('browse',null)">
+                <span>${esc(c)}</span>
+                <span style="text-align:right;font-variant-numeric:tabular-nums">${fmt(a)}</span>
+                <span style="text-align:right;font-variant-numeric:tabular-nums;color:var(--text2)">${fmt(a/months)}</span>
+              </div>`).join('')}` : ''}
+        </div>
+      </div>
+      <div>
+        <div class="card" style="margin-bottom:16px">
+          <div class="card-header">Mapping progress</div>
+          <div class="card-body" style="padding:16px">
+            <div style="font-size:13px;color:var(--text2);margin-bottom:4px">${mapped} of ${S.txs.length} transactions mapped</div>
+            <div class="progress"><div class="progress-fill" style="width:${pct}%"></div></div>
+            ${ug.length
+              ? `<div style="font-size:13px;margin-top:6px">${ug.length} merchants unmapped — <a href="#" onclick="showTab('unmapped',null);return false" style="color:var(--blue)">map them now</a></div>`
+              : `<div style="font-size:13px;margin-top:6px;color:var(--green)">All merchants mapped</div>`}
+          </div>
+        </div>
+        <div class="card">
+          <div class="card-header">Accounts</div>
+          <div class="card-body">
+            ${[...new Set(ftxs.map(t=>t.account))].map(acc=>{
+              const at=ftxs.filter(t=>t.account===acc);
+              const sp=at.filter(t=>t.amount<0).reduce((s,t)=>s+Math.abs(t.amount),0);
+              return `<div class="tbl-row" style="grid-template-columns:1fr auto">
+                <span>${esc(acc)}</span>
+                <span style="color:var(--text2);font-size:12px">${at.length} txs · ${fmt(sp)}</span>
+              </div>`;
+            }).join('')}
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="card" style="margin-top:16px">
+      <div class="card-header">
+        Monthly spend by category
+        <span style="font-size:11px;color:var(--text3);font-weight:normal">lifestyle spend only · stacked</span>
+      </div>
+      <div class="card-body" style="padding:16px">
+        <canvas id="overview-chart" height="120"></canvas>
+      </div>
+    </div>`;
+  // Draw chart after DOM is set
+  setTimeout(()=>drawOverviewChart(ftxs), 0);
+}
+
+// ── Chart colour palette ──────────────────────────────────────────────────────
+const CHART_COLOURS = [
+  '#2d6a4f','#1d4ed8','#b45309','#7c3aed','#0e7490',
+  '#be185d','#15803d','#c2410c','#4338ca','#0369a1',
+  '#a16207','#9d174d','#166534','#9a3412','#3730a3',
+  '#155e75','#92400e','#831843','#065f46','#7e22ce'
+];
+
+function buildMonthlyData(txs){
+  // Returns {months:[], byCat:{catName:[val,val,...]}}
+  const months = [...new Set(txs.map(t=>t.date.substring(0,7)))].sort();
+  const cats = [...new Set(txs.filter(t=>!EXCLUDE.has(eff(t))&&t.amount<0).map(t=>eff(t)))];
+  // Sort cats by total spend descending
+  const catTotals = {};
+  txs.forEach(t=>{ if(!EXCLUDE.has(eff(t))&&t.amount<0){ const c=eff(t); catTotals[c]=(catTotals[c]||0)+Math.abs(t.amount); }});
+  cats.sort((a,b)=>(catTotals[b]||0)-(catTotals[a]||0));
+  const byCat = {};
+  cats.forEach(c=>{ byCat[c] = months.map(()=>0); });
+  txs.forEach(t=>{
+    if(EXCLUDE.has(eff(t))||t.amount>=0) return;
+    const c=eff(t), mi=months.indexOf(t.date.substring(0,7));
+    if(mi>=0&&byCat[c]) byCat[c][mi]+=Math.abs(t.amount);
+  });
+  return {months, byCat, cats};
+}
+
+let overviewChartInst = null;
+function drawOverviewChart(ftxs){
+  const canvas = document.getElementById('overview-chart');
+  if(!canvas) return;
+  const {months, byCat, cats} = buildMonthlyData(ftxs);
+  if(!months.length) return;
+  if(overviewChartInst) overviewChartInst.destroy();
+  overviewChartInst = new Chart(canvas, {
+    type: 'bar',
+    data: {
+      labels: months,
+      datasets: cats.slice(0,15).map((c,i)=>({
+        label: c,
+        data: byCat[c].map(v=>Math.round(v)),
+        backgroundColor: CHART_COLOURS[i % CHART_COLOURS.length],
+        stack: 'stack'
+      }))
+    },
+    options: {
+      responsive: true,
+      plugins: {
+        legend: { position:'bottom', labels:{ boxWidth:12, font:{size:11}, padding:10 } },
+        tooltip: {
+          callbacks: {
+            label: ctx => ` ${ctx.dataset.label}: £${ctx.parsed.y.toLocaleString('en-GB')}`
+          }
+        }
+      },
+      scales: {
+        x: { stacked:true, ticks:{ font:{size:11} } },
+        y: { stacked:true, ticks:{ font:{size:11}, callback: v=>'£'+v.toLocaleString('en-GB') } }
+      }
+    }
+  });
+}
+
+let browseChartInst = null;
+function drawBrowseChart(txs, catName){
+  const canvas = document.getElementById('browse-chart');
+  if(!canvas) return;
+  const months = [...new Set(txs.map(t=>t.date.substring(0,7)))].sort();
+  const data = months.map(m=>Math.round(txs.filter(t=>t.date.startsWith(m)&&t.amount<0).reduce((s,t)=>s+Math.abs(t.amount),0)));
+  if(browseChartInst) browseChartInst.destroy();
+  browseChartInst = new Chart(canvas, {
+    type: 'bar',
+    data: {
+      labels: months,
+      datasets:[{
+        label: catName,
+        data,
+        backgroundColor: '#1d4ed8',
+        borderRadius: 3
+      }]
+    },
+    options: {
+      responsive: true,
+      plugins: {
+        legend: { display:false },
+        tooltip: { callbacks:{ label: ctx=>` £${ctx.parsed.y.toLocaleString('en-GB')}` } }
+      },
+      scales: {
+        x: { ticks:{ font:{size:11} } },
+        y: { ticks:{ font:{size:11}, callback: v=>'£'+v.toLocaleString('en-GB') } }
+      }
+    }
+  });
+}
+
+// ═══════════════════════════════════════════════════════════════
+// UNMAPPED
+// ═══════════════════════════════════════════════════════════════
+function renderUnmapped(main){
+  const ug = getUnmapped();
+  if(!ug.length){
+    main.innerHTML = `<div class="page-header"><div class="page-title">Unmapped merchants</div></div>
+      <div class="card"><div class="empty"><div class="empty-icon">✓</div><h3>All merchants mapped</h3><p>Every merchant with a name has a category rule. Use Browse by category to review individual transactions.</p></div></div>`;
+    return;
+  }
+  const sorted = S.umSort==='txs'
+    ? [...ug].sort((a,b)=>b.count-a.count)
+    : S.umSort==='date'
+    ? [...ug].sort((a,b)=>b.latestDate.localeCompare(a.latestDate))
+    : [...ug].sort((a,b)=>b.spend-a.spend);
+  const search = S.umSearch.toLowerCase();
+  const filtered = search ? sorted.filter(g=>g.merchant.toLowerCase().includes(search)) : sorted;
+  const PAGE=60, pages=Math.max(1,Math.ceil(filtered.length/PAGE));
+  const p=Math.min(S.umPage,pages);
+  const slice=filtered.slice((p-1)*PAGE,p*PAGE);
+  const totalSpend=ug.reduce((s,g)=>s+g.spend,0);
+  const totalTxs=ug.reduce((s,g)=>s+g.count,0);
+
+  main.innerHTML = `
+    <div class="page-header">
+      <div class="page-title">Unmapped merchants</div>
+      <div class="page-sub">${ug.length} merchants · ${totalTxs} transactions · ${fmt(totalSpend)} spend</div>
+    </div>
+    <div class="filter-bar">
+      <div class="search-wrap" style="max-width:320px">
+        <input type="search" class="search-input" placeholder="Search merchants..." value="${esc(S.umSearch)}"
+          oninput="S.umSearch=this.value;S.umPage=1;renderUnmapped(document.getElementById('main-content'))">
+      </div>
+      <span style="font-size:12px;color:var(--text2)">${filtered.length} shown</span>
+    </div>
+    <div class="card">
+      <div class="tbl-header" style="grid-template-columns:1fr 110px 65px 95px 95px 185px">
+        <span>Merchant</span>
+        <span>Snoop category</span>
+        <span class="sort-col" onclick="setUmSort('txs')" data-active="${S.umSort==='txs'}">Txs</span>
+        <span class="sort-col" onclick="setUmSort('spend')" data-active="${S.umSort==='spend'}">Spend</span>
+        <span class="sort-col" onclick="setUmSort('date')" data-active="${S.umSort==='date'}">Latest</span>
+        <span>Map to</span>
+      </div>
+      <div id="um-list">
+        ${slice.map(g=>{
+          const sid='u'+Math.random().toString(36).substring(2,10);
+          const sm=String(g.merchant).replace(/\\/g,'\\\\').replace(/'/g,"\\'");
+          return `<div class="tbl-row" style="grid-template-columns:1fr 110px 65px 95px 95px 185px" id="${sid}">
+            <span style="font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${esc(g.merchant)}">
+              ${esc(g.merchant)}${g.hasNew?'<span class="tag tag-new">new</span>':''}
+            </span>
+            <span style="color:var(--text2);font-size:11px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc([...g.cats].join(', '))}</span>
+            <span style="text-align:right">${g.count}</span>
+            <span style="text-align:right;font-variant-numeric:tabular-nums">${g.spend>0?fmt(g.spend):'—'}</span>
+            <span style="text-align:right;font-size:11px;color:var(--text2)">${g.latestDate||'—'}</span>
+            <select onchange="assignMerchant('${sid}','${sm}',this.value)">
+              <option value="">— pick —</option>${catOpts('')}
+            </select>
+          </div>`;
+        }).join('')}
+      </div>
+      ${pages>1 ? `<div class="pager">
+        <button class="btn btn-sm" onclick="S.umPage=Math.max(1,S.umPage-1);renderUnmapped(document.getElementById('main-content'))" ${p<=1?'disabled':''}>← Prev</button>
+        <span>Page ${p} of ${pages}</span>
+        <button class="btn btn-sm" onclick="S.umPage=Math.min(${pages},S.umPage+1);renderUnmapped(document.getElementById('main-content'))" ${p>=pages?'disabled':''}>Next →</button>
+      </div>` : ''}
+    </div>`;
+}
+
+function setUmSort(col){
+  S.umSort = col;
+  S.umPage = 1;
+  renderUnmapped(document.getElementById('main-content'));
+}
+
+function assignMerchant(sid, merchant, cat){
+  if(!cat) return;
+  S.mapping[merchant] = cat;
+  S.txs.forEach(t=>{ if(t.merchant===merchant){ t.ourCat=cat; t.mappingDerived=true; } });
+  scheduleSave();
+  const row = document.getElementById(sid);
+  if(row){ row.style.transition='opacity 0.15s'; row.style.opacity='0'; setTimeout(()=>{ row.remove(); updateStatusBar(); }, 160); }
+}
+
+// ═══════════════════════════════════════════════════════════════
+// BROWSE BY CATEGORY
+// ═══════════════════════════════════════════════════════════════
+function renderBrowse(main){
+  const PAGE=50;
+  let txs = S.txs.filter(t=>eff(t)===S.brCat&&inRange(t));
+  if(S.brSearch){ const s=S.brSearch.toLowerCase(); txs=txs.filter(t=>(t.merchant||'').toLowerCase().includes(s)||t.description.toLowerCase().includes(s)); }
+  txs.sort((a,b)=>b.date.localeCompare(a.date));
+  const total=txs.filter(t=>t.amount<0).reduce((s,t)=>s+Math.abs(t.amount),0);
+  const months=Math.max(1,new Set(txs.map(t=>t.date.substring(0,7))).size);
+  const pages=Math.max(1,Math.ceil(txs.length/PAGE));
+  const p=Math.min(S.brPage,pages);
+  const slice=txs.slice((p-1)*PAGE,p*PAGE);
+
+  main.innerHTML = `
+    <div class="page-header">
+      <div class="page-title">Browse by category</div>
+    </div>
+    ${dateFilterBar('br')}
+    <div class="filter-bar">
+      <select class="cat-select-large" onchange="S.brCat=this.value;S.brPage=1;S.brSearch='';renderBrowse(document.getElementById('main-content'))">${catOpts(S.brCat)}</select>
+      <div class="search-wrap" style="max-width:280px">
+        <input type="search" class="search-input" placeholder="Search within category..." value="${esc(S.brSearch)}"
+          oninput="S.brSearch=this.value;S.brPage=1;renderBrowse(document.getElementById('main-content'))">
+      </div>
+    </div>
+    <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:20px">
+      <div class="metric-card"><div class="metric-val">${fmt(total)}</div><div class="metric-lbl">Total spend</div></div>
+      <div class="metric-card"><div class="metric-val">${fmt(total/months)}</div><div class="metric-lbl">Monthly average</div></div>
+      <div class="metric-card"><div class="metric-val">${txs.length}</div><div class="metric-lbl">Transactions</div></div>
+    </div>
+    <div class="card" style="margin-bottom:16px">
+      <div class="card-header">Monthly spend — ${esc(S.brCat)}</div>
+      <div class="card-body" style="padding:16px">
+        <canvas id="browse-chart" height="80"></canvas>
+      </div>
+    </div>
+    <div class="card">
+      <div class="tbl-header" style="grid-template-columns:90px 1fr 85px 160px 130px">
+        <span>Date</span><span>Merchant / description</span><span style="text-align:right">Amount</span><span>Recategorise</span><span>Account</span>
+      </div>
+      ${slice.map(t=>{
+        const idx=S.txs.indexOf(t);
+        return `<div class="tbl-row" style="grid-template-columns:90px 1fr 85px 160px 130px" id="br${idx}">
+          <span style="color:var(--text2);font-size:12px">${t.date.substring(0,10)}</span>
+          <div style="min-width:0">
+            <div style="font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(t.merchant||'')}</div>
+            <div style="font-size:11px;color:var(--text2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(t.description.substring(0,42))}</div>
+          </div>
+          <span style="text-align:right;font-variant-numeric:tabular-nums;font-weight:500" class="${t.amount<0?'debit':'credit'}">${t.amount<0?'-':'+'}${fmt(t.amount)}</span>
+          <select style="font-size:11px;padding:3px 5px" onchange="recatTx(${idx},this.value)">${catOpts(eff(t))}</select>
+          <span style="color:var(--text2);font-size:11px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(t.account)}</span>
+        </div>`;
+      }).join('')}
+      ${!txs.length ? `<div class="empty" style="padding:32px"><p>No transactions in <strong>${esc(S.brCat)}</strong>${S.dateFrom||S.dateTo?' for the selected period':''}.</p></div>` : ''}
+      ${pages>1 ? `<div class="pager">
+        <button class="btn btn-sm" onclick="S.brPage=Math.max(1,S.brPage-1);renderBrowse(document.getElementById('main-content'))" ${p<=1?'disabled':''}>← Prev</button>
+        <span>Page ${p} of ${pages}</span>
+        <button class="btn btn-sm" onclick="S.brPage=Math.min(${pages},S.brPage+1);renderBrowse(document.getElementById('main-content'))" ${p>=pages?'disabled':''}>Next →</button>
+      </div>` : ''}
+    </div>`;
+  // Draw chart after DOM is updated — use all txs for this category (not just current page)
+  const allCatTxs = S.txs.filter(t=>eff(t)===S.brCat&&inRange(t));
+  setTimeout(()=>drawBrowseChart(allCatTxs, S.brCat), 0);
+}
+
+function recatTx(idx, newCat){
+  S.txs[idx].ourCat = newCat;
+  S.txs[idx].mappingDerived = false;  // manually set — don't override with mapping
+  scheduleSave();
+  if(newCat !== S.brCat){
+    const row = document.getElementById('br'+idx);
+    if(row){ row.style.transition='opacity 0.2s'; row.style.opacity='0.3'; }
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════
+// ALL TRANSACTIONS
+// ═══════════════════════════════════════════════════════════════
+function renderTransactions(main){
+  const PAGE=50;
+  let txs=[...S.txs].filter(inRange);
+  if(S.txSearch){ const s=S.txSearch.toLowerCase(); txs=txs.filter(t=>(t.merchant||'').toLowerCase().includes(s)||t.description.toLowerCase().includes(s)); }
+  if(S.txCat) txs=txs.filter(t=>eff(t)===S.txCat);
+  txs.sort((a,b)=>b.date.localeCompare(a.date));
+  const pages=Math.max(1,Math.ceil(txs.length/PAGE));
+  const p=Math.min(S.txPage,pages);
+  const slice=txs.slice((p-1)*PAGE,p*PAGE);
+
+  main.innerHTML = `
+    <div class="page-header">
+      <div class="page-title">All transactions</div>
+      <div class="page-sub">${txs.length.toLocaleString()} transactions${S.txCat?' in '+S.txCat:''}</div>
+    </div>
+    ${dateFilterBar('tx')}
+    <div class="filter-bar">
+      <div class="search-wrap" style="max-width:320px">
+        <input type="search" class="search-input" placeholder="Search merchant or description..." value="${esc(S.txSearch)}"
+          oninput="S.txSearch=this.value;S.txPage=1;renderTransactions(document.getElementById('main-content'))">
+      </div>
+      <select onchange="S.txCat=this.value;S.txPage=1;renderTransactions(document.getElementById('main-content'))">
+        <option value="">All categories</option>${catOpts(S.txCat)}
+      </select>
+      <span style="font-size:12px;color:var(--text2)">${txs.length.toLocaleString()} transactions</span>
+    </div>
+    <div class="card">
+      <div class="tbl-header" style="grid-template-columns:90px 1fr 160px 85px 130px">
+        <span>Date</span><span>Merchant</span><span>Category</span><span style="text-align:right">Amount</span><span>Account</span>
+      </div>
+      ${slice.map(t=>{
+        const cat=eff(t); const idx=S.txs.indexOf(t);
+        return `<div class="tbl-row" style="grid-template-columns:90px 1fr 160px 85px 130px;${EXCLUDE.has(cat)?'opacity:0.38':''}">
+          <span style="color:var(--text2);font-size:12px">${t.date.substring(0,10)}${t.isNew?'<span class="tag tag-new">new</span>':''}</span>
+          <div style="min-width:0">
+            <div style="font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(t.merchant||'')}</div>
+            <div style="font-size:11px;color:var(--text2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(t.description.substring(0,38))}</div>
+          </div>
+          <select style="font-size:11px;padding:3px 5px" onchange="S.txs[${idx}].ourCat=this.value;S.txs[${idx}].mappingDerived=false;scheduleSave()">${catOpts(cat)}</select>
+          <span style="text-align:right;font-variant-numeric:tabular-nums;font-weight:500" class="${t.amount<0?'debit':'credit'}">${t.amount<0?'-':'+'}${fmt(t.amount)}</span>
+          <span style="color:var(--text2);font-size:11px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(t.account)}</span>
+        </div>`;
+      }).join('')}
+      <div class="pager">
+        <button class="btn btn-sm" onclick="S.txPage=Math.max(1,S.txPage-1);renderTransactions(document.getElementById('main-content'))" ${p<=1?'disabled':''}>← Prev</button>
+        <span>Page ${p} of ${pages}</span>
+        <button class="btn btn-sm" onclick="S.txPage=Math.min(${pages},S.txPage+1);renderTransactions(document.getElementById('main-content'))" ${p>=pages?'disabled':''}>Next →</button>
+      </div>
+    </div>`;
+}
+
+// ═══════════════════════════════════════════════════════════════
+// MERCHANT MAPPING
+// ═══════════════════════════════════════════════════════════════
+function renderMerchants(main){
+  const PAGE=50;
+  const entries=Object.entries(S.mapping).filter(([m])=>m.toLowerCase().includes(S.mSearch.toLowerCase()));
+  entries.sort((a,b)=>a[0].localeCompare(b[0]));
+  const pages=Math.max(1,Math.ceil(entries.length/PAGE));
+  const p=Math.min(S.mPage,pages);
+  const slice=entries.slice((p-1)*PAGE,p*PAGE);
+
+  main.innerHTML = `
+    <div class="page-header">
+      <div class="page-title">Merchant mapping</div>
+      <div class="page-sub">${entries.length} rules</div>
+    </div>
+    <div class="filter-bar">
+      <div class="search-wrap" style="max-width:320px">
+        <input type="search" class="search-input" placeholder="Search merchants..." value="${esc(S.mSearch)}"
+          oninput="S.mSearch=this.value;S.mPage=1;renderMerchants(document.getElementById('main-content'))">
+      </div>
+      <span style="font-size:12px;color:var(--text2)">${entries.length} rules</span>
+    </div>
+    <div class="card">
+      <div class="tbl-header" style="grid-template-columns:1fr 200px 70px">
+        <span>Merchant</span><span>Category</span><span></span>
+      </div>
+      ${slice.map(([merchant,cat])=>{
+        const sm=merchant.replace(/\\/g,'\\\\').replace(/'/g,"\\'");
+        return `<div class="tbl-row" style="grid-template-columns:1fr 200px 70px">
+          <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(merchant)}</span>
+          <select style="font-size:12px" onchange="S.mapping['${sm}']=this.value;applyMapping();applyDescMapping();scheduleSave()">${catOpts(cat)}</select>
+          <button class="btn btn-sm" onclick="deleteMerchant('${sm}')">Remove</button>
+        </div>`;
+      }).join('')}
+      <div class="pager">
+        <button class="btn btn-sm" onclick="S.mPage=Math.max(1,S.mPage-1);renderMerchants(document.getElementById('main-content'))" ${p<=1?'disabled':''}>← Prev</button>
+        <span>Page ${p} of ${pages}</span>
+        <button class="btn btn-sm" onclick="S.mPage=Math.min(${pages},S.mPage+1);renderMerchants(document.getElementById('main-content'))" ${p>=pages?'disabled':''}>Next →</button>
+      </div>
+    </div>`;
+}
+
+function deleteMerchant(merchant){
+  delete S.mapping[merchant];
+  scheduleSave();
+  renderMerchants(document.getElementById('main-content'));
+}
+
+// ═══════════════════════════════════════════════════════════════
+// HELP
+// ═══════════════════════════════════════════════════════════════
+function renderHelp(main){
+  main.innerHTML = `
+    <div class="page-header">
+      <div class="page-title">Help</div>
+    </div>
+    <div style="max-width:580px;display:flex;flex-direction:column;gap:16px">
+      <div class="card">
+        <div class="card-header">Data storage</div>
+        <div class="card-body" style="padding:16px;font-size:13px;line-height:1.7;color:var(--text2)">
+          All data is stored in your browser's <strong style="color:var(--text)">IndexedDB</strong> — a persistent local database built into Chrome. It survives closing the tab, restarting Chrome, and rebooting your Mac. It does <em>not</em> sync to other devices or browsers.<br><br>
+          Use <strong style="color:var(--text)">Export backup</strong> to save a zip file containing your full transaction history and merchant mapping. Keep this somewhere safe (e.g. Documents) as a backup in case you clear your browser data.
+        </div>
+      </div>
+      <div class="card">
+        <div class="card-header">Monthly workflow</div>
+        <div class="card-body" style="padding:16px;font-size:13px;line-height:1.7;color:var(--text2)">
+          1. Open this file in Chrome<br>
+          2. Click <strong style="color:var(--text)">Import Snoop</strong> — new transactions merge in automatically<br>
+          3. Check <strong style="color:var(--text)">Unmapped merchants</strong> for anything new to categorise<br>
+          4. Review categories in <strong style="color:var(--text)">Browse by category</strong><br>
+          5. Changes save automatically — no action needed<br>
+          6. Optionally click <strong style="color:var(--text)">Export backup</strong> for a portable file
+        </div>
+      </div>
+      <div class="card">
+        <div class="card-header">Categories excluded from lifestyle spend</div>
+        <div class="card-body" style="padding:16px;font-size:13px;color:var(--text2)">
+          ${[...EXCLUDE].join(', ')}
+        </div>
+      </div>
+      <div class="card">
+        <div class="card-header">Internal transfer note</div>
+        <div class="card-body" style="padding:16px;font-size:13px;line-height:1.7;color:var(--text2)">
+          There is a known £11,742.88 imbalance in Internal Transfers from May–Oct 2024. This is because Snoop wasn't connected to the First Direct credit card in that early period — the debit shows but the matching credit doesn't. This is a data gap, not a categorisation error.
+        </div>
+      </div>
+    </div>`;
+}
+
+// ═══════════════════════════════════════════════════════════════
+// CSV PARSING
+// ═══════════════════════════════════════════════════════════════
+function parseCSVText(text){ const lines=text.split('\n').filter(l=>l.trim()); if(!lines.length)return[]; const h=parseCSVLine(lines[0]); return lines.slice(1).map(l=>{const v=parseCSVLine(l),o={};h.forEach((k,i)=>o[k]=v[i]||'');return o;}); }
+function parseCSVLine(line){ const r=[];let c='',q=false; for(let i=0;i<line.length;i++){const ch=line[i];if(ch==='"'){if(q&&line[i+1]==='"'){c+='"';i++;}else q=!q;}else if(ch===','&&!q){r.push(c);c='';}else c+=ch;} r.push(c);return r; }
+
+// ═══════════════════════════════════════════════════════════════
+// INIT
+// ═══════════════════════════════════════════════════════════════
+async function init(){
+  try {
+    await openDB();
+    await loadFromDB();
+    applyMapping();
+    applyDescMapping();
+    scheduleSave(); // persist any migrations (renames, mappingDerived flags)
+  } catch(e){
+    console.warn('IndexedDB not available:', e);
+    setAutosave('', 'Storage unavailable');
+  }
+  render();
+}
+
+init();
+</script>
+</body>
+</html>
