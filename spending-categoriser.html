@@ -463,6 +463,7 @@
     <button class="btn btn-ghost" onclick="exportZip()">Export backup</button>
     <label class="btn btn-ghost" style="cursor:pointer">Import backup<input type="file" accept=".zip" style="display:none" onchange="importZip(event)"></label>
     <label class="btn btn-ghost" style="cursor:pointer">Import mapping<input type="file" accept=".json" style="display:none" onchange="importMappingJSON(event)"></label>
+    <button class="btn btn-ghost" onclick="exportMapping()">Export mapping</button>
     <label class="btn btn-ghost" style="cursor:pointer;background:rgba(180,83,9,0.25)" title="One-time import of Excel spending-history CSV — restores your corrected categorisations">Import Excel history<input type="file" accept=".csv,.xls,.xlsx" style="display:none" onchange="importExcelHistory(event)"></label>
     <button class="btn btn-ghost" onclick="exportCSV()">Export CSV</button>
   </div>
@@ -1090,12 +1091,38 @@ const INIT_MAP = {
   "iCarhireinsurance.com":"Insurance"
 };
 
+// Fuzzy substring rules — match if the key appears anywhere in the merchant
+// name OR description (case-insensitive). These catch Snoop's naming drift
+// where one merchant appears under several spellings. Keys must be 4+ chars.
+// Exact merchant-name rules (INIT_MAP / S.mapping) always take priority.
+const FUZZY_SEED = [
+  { match: "ronnie scott", cat: "Entertainment & Culture" },
+  { match: "macknade", cat: "Groceries" },
+  { match: "mccartney s of", cat: "Groceries" },
+  { match: "green room whi", cat: "Eating Out" },
+  { match: "bel and the dragon", cat: "Eating Out" },
+  { match: "cadogan hall", cat: "Entertainment & Culture" },
+  { match: "creightons of blac", cat: "Health & Beauty" },
+  { match: "victoriahealth", cat: "Health & Wellbeing" },
+  { match: "the private gp", cat: "Health & Wellbeing" },
+  { match: "ole & steen", cat: "Eating Out" },
+  { match: "63 high", cat: "Eating Out" },
+  { match: "single variety", cat: "Groceries" },
+  { match: "bumboo eco", cat: "Shopping (General)" },
+  { match: "bayley", cat: "Eating Out" },
+  { match: "ferrario coffee", cat: "Eating Out" },
+  { match: "translink", cat: "Transport" }
+];
+
 // ═══════════════════════════════════════════════════════════════
 // STATE
 // ═══════════════════════════════════════════════════════════════
 let S = {
   txs: [],
   mapping: {...INIT_MAP},
+  fuzzyRules: [...FUZZY_SEED],   // user-editable substring rules
+  fuzzyMap: {},                  // built from fuzzyRules at runtime
+  umSelected: {},                // merchant -> true, for bulk categorise
   dateFrom: '',
   dateTo: '',
   activeTab: 'overview',
@@ -1155,6 +1182,10 @@ async function loadFromDB(){
   try {
     const txs = await dbGet('txs');
     const mapping = await dbGet('mapping');
+    const fuzzy = await dbGet('fuzzyRules');
+    if(fuzzy && Array.isArray(fuzzy) && fuzzy.length) {
+      S.fuzzyRules = fuzzy;
+    }
     if(txs && txs.length) {
       S.txs = txs;
       // Migration: rename legacy/duplicate category names
@@ -1204,6 +1235,7 @@ function scheduleSave(){
     try {
       await dbSet('txs', S.txs);
       await dbSet('mapping', S.mapping);
+      await dbSet('fuzzyRules', S.fuzzyRules);
       setAutosave('saved', 'Saved');
     } catch(e) {
       setAutosave('', 'Save failed');
@@ -1247,14 +1279,38 @@ function applyMapping(){
   // - If ourCat is null → set from mapping
   // - If ourCat was set by mapping (mappingDerived=true) → update if mapping changed
   // - If ourCat was set manually (mappingDerived=false) → leave alone
+  // Precedence: exact merchant match wins; then fuzzy (substring) match on
+  // merchant OR description.
+  rebuildFuzzyMap();
   S.txs.forEach(t=>{
-    if(!t.merchant) return;
-    const mapped = S.mapping[t.merchant];
-    if(!mapped) return;
-    if(!t.ourCat || t.mappingDerived) {
-      t.ourCat = mapped;
+    if(t.ourCat && !t.mappingDerived) return;  // protect manual categorisations
+
+    // 1. Exact merchant-name match (highest priority)
+    if(t.merchant && S.mapping[t.merchant]){
+      t.ourCat = S.mapping[t.merchant];
       t.mappingDerived = true;
+      return;
     }
+
+    // 2. Fuzzy match — substring of the fuzzy key appears in merchant or description
+    const hay = ((t.merchant||'') + ' ' + (t.description||'')).toLowerCase();
+    for(const key in S.fuzzyMap){
+      if(hay.includes(key)){
+        t.ourCat = S.fuzzyMap[key];
+        t.mappingDerived = true;
+        return;
+      }
+    }
+  });
+}
+
+// Build the fuzzy lookup from FUZZY_MAP (user-defined) — lowercased keys,
+// minimum length 4 to avoid over-matching short strings.
+function rebuildFuzzyMap(){
+  S.fuzzyMap = {};
+  (S.fuzzyRules||[]).forEach(r=>{
+    const k = (r.match||'').toLowerCase().trim();
+    if(k.length >= 4) S.fuzzyMap[k] = r.cat;
   });
 }
 
@@ -1620,12 +1676,60 @@ async function importZip(evt){
   evt.target.value = '';
 }
 
+// Export the current merchant mapping + fuzzy rules as a JSON file.
+// This is the portable record of all your categorisation rules — keep it safe.
+function exportMapping(){
+  const out = {
+    mapping: S.mapping,
+    fuzzyRules: S.fuzzyRules
+  };
+  dl(JSON.stringify(out, null, 2), 'application/json', 'spending-mapping-'+new Date().toISOString().substring(0,10)+'.json');
+  toast('Mapping exported — '+Object.keys(S.mapping).length+' rules + '+S.fuzzyRules.length+' fuzzy');
+}
+
+// Copy the current unmapped merchants to the clipboard, formatted for pasting
+// to an AI assistant to categorise. Includes description samples so the AI has
+// context. Data stays on your machine — nothing is sent anywhere by the app.
+function copyUnmappedForAI(){
+  const ug = getUnmapped();
+  if(!ug.length){ toast('Nothing unmapped'); return; }
+  // For each unmapped merchant, include a sample description for context
+  const sampleDesc = {};
+  S.txs.forEach(t=>{
+    if(t.merchant && !sampleDesc[t.merchant] && !S.mapping[t.merchant]){
+      sampleDesc[t.merchant] = (t.description||'').substring(0,40);
+    }
+  });
+  const catList = CATS.join(', ');
+  const header =
+    'Please categorise these merchants into one of these categories: '+catList+'.\n' +
+    'Reply ONLY with a JSON object of {"merchant": "Category"}. Here are the merchants '+
+    '(name, transaction count, total spend, sample description):\n\n';
+  const body = ug.sort((a,b)=>b.spend-a.spend).map(g=>
+    g.merchant + '\t' + g.count + '\t£' + Math.round(g.spend) + '\t' + (sampleDesc[g.merchant]||'')
+  ).join('\n');
+  const text = header + body;
+  navigator.clipboard.writeText(text).then(
+    ()=>toast('Copied '+ug.length+' merchants — paste to your AI assistant'),
+    ()=>{
+      // Fallback: show in a prompt for manual copy
+      window.prompt('Copy this text (Cmd+C) and paste to your AI assistant:', text);
+    }
+  );
+}
+
 async function importMappingJSON(evt){
   const file = evt.target.files[0]; if(!file) return;
   try {
     const text = await file.text();
     const imported = JSON.parse(text);
-    S.mapping = {...INIT_MAP, ...imported};
+    // Support both formats: plain {merchant:cat} OR {mapping:{...}, fuzzyRules:[...]}
+    if(imported.mapping && typeof imported.mapping === 'object'){
+      S.mapping = {...INIT_MAP, ...imported.mapping};
+      if(Array.isArray(imported.fuzzyRules)) S.fuzzyRules = imported.fuzzyRules;
+    } else {
+      S.mapping = {...INIT_MAP, ...imported};
+    }
     applyMapping();
     applyDescMapping();
     scheduleSave();
@@ -2029,12 +2133,13 @@ function renderUnmapped(main){
     ? [...ug].sort((a,b)=>b.latestDate.localeCompare(a.latestDate))
     : [...ug].sort((a,b)=>b.spend-a.spend);
   const search = S.umSearch.toLowerCase();
-  const filtered = search ? sorted.filter(g=>g.merchant.toLowerCase().includes(search)) : sorted;
+  const filtered = search ? sorted.filter(g=>String(g.merchant).toLowerCase().includes(search)) : sorted;
   const PAGE=60, pages=Math.max(1,Math.ceil(filtered.length/PAGE));
   const p=Math.min(S.umPage,pages);
   const slice=filtered.slice((p-1)*PAGE,p*PAGE);
   const totalSpend=ug.reduce((s,g)=>s+g.spend,0);
   const totalTxs=ug.reduce((s,g)=>s+g.count,0);
+  const selCount = Object.keys(S.umSelected).filter(m=>S.umSelected[m]).length;
 
   main.innerHTML = `
     <div class="page-header">
@@ -2042,14 +2147,25 @@ function renderUnmapped(main){
       <div class="page-sub">${ug.length} merchants · ${totalTxs} transactions · ${fmt(totalSpend)} spend</div>
     </div>
     <div class="filter-bar">
-      <div class="search-wrap" style="max-width:320px">
+      <div class="search-wrap" style="max-width:280px">
         <input type="search" class="search-input" placeholder="Search merchants..." value="${esc(S.umSearch)}"
           oninput="S.umSearch=this.value;S.umPage=1;renderUnmapped(document.getElementById('main-content'))">
       </div>
       <span style="font-size:12px;color:var(--text2)">${filtered.length} shown</span>
+      <span style="flex:1"></span>
+      <button class="btn btn-sm" onclick="copyUnmappedForAI()" title="Copy the unmapped list, formatted to paste into an AI assistant for categorising">Copy for AI</button>
+    </div>
+    <div class="card" style="background:var(--surface2);border:none;padding:10px 14px;margin-bottom:12px;box-shadow:none;display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+      <strong style="font-size:12px">Bulk categorise:</strong>
+      <span style="font-size:12px;color:var(--text2)">${selCount} selected</span>
+      <select id="bulk-cat" style="font-size:12px"><option value="">— category —</option>${catOpts('')}</select>
+      <button class="btn btn-sm" onclick="bulkAssign()" ${selCount?'':'disabled'}>Apply to selected</button>
+      <button class="btn btn-sm" onclick="umSelectAll(true)">Select all shown</button>
+      <button class="btn btn-sm" onclick="umSelectAll(false)">Clear</button>
     </div>
     <div class="card">
-      <div class="tbl-header" style="grid-template-columns:1fr 110px 65px 95px 95px 185px">
+      <div class="tbl-header" style="grid-template-columns:34px 1fr 100px 60px 90px 90px 175px">
+        <span></span>
         <span>Merchant</span>
         <span>Snoop category</span>
         <span class="sort-col" onclick="setUmSort('txs')" data-active="${S.umSort==='txs'}">Txs</span>
@@ -2061,7 +2177,9 @@ function renderUnmapped(main){
         ${slice.map(g=>{
           const sid='u'+Math.random().toString(36).substring(2,10);
           const sm=String(g.merchant).replace(/\\/g,'\\\\').replace(/'/g,"\\'");
-          return `<div class="tbl-row" style="grid-template-columns:1fr 110px 65px 95px 95px 185px" id="${sid}">
+          const checked = S.umSelected[g.merchant] ? 'checked' : '';
+          return `<div class="tbl-row" style="grid-template-columns:34px 1fr 100px 60px 90px 90px 175px" id="${sid}">
+            <span><input type="checkbox" ${checked} onchange="umToggle('${sm}',this.checked)"></span>
             <span style="font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${esc(g.merchant)}">
               ${esc(g.merchant)}${g.hasNew?'<span class="tag tag-new">new</span>':''}
             </span>
@@ -2083,6 +2201,37 @@ function renderUnmapped(main){
     </div>`;
 }
 
+function umToggle(merchant, on){
+  S.umSelected[merchant] = on;
+  // Re-render just the bulk bar count without losing scroll — cheap full re-render is fine
+  renderUnmapped(document.getElementById('main-content'));
+}
+
+function umSelectAll(on){
+  const ug = getUnmapped();
+  const search = S.umSearch.toLowerCase();
+  const filtered = search ? ug.filter(g=>String(g.merchant).toLowerCase().includes(search)) : ug;
+  if(on){ filtered.forEach(g=>S.umSelected[g.merchant]=true); }
+  else { S.umSelected = {}; }
+  renderUnmapped(document.getElementById('main-content'));
+}
+
+function bulkAssign(){
+  const cat = document.getElementById('bulk-cat').value;
+  if(!cat){ alert('Pick a category first'); return; }
+  const merchants = Object.keys(S.umSelected).filter(m=>S.umSelected[m]);
+  if(!merchants.length){ alert('No merchants selected'); return; }
+  merchants.forEach(m=>{
+    S.mapping[m] = cat;
+    S.txs.forEach(t=>{ if(t.merchant===m){ t.ourCat=cat; t.mappingDerived=true; } });
+  });
+  S.umSelected = {};
+  scheduleSave();
+  updateStatusBar();
+  renderUnmapped(document.getElementById('main-content'));
+  toast(`Mapped ${merchants.length} merchants to ${cat}`);
+}
+
 function setUmSort(col){
   S.umSort = col;
   S.umPage = 1;
@@ -2093,6 +2242,7 @@ function assignMerchant(sid, merchant, cat){
   if(!cat) return;
   S.mapping[merchant] = cat;
   S.txs.forEach(t=>{ if(t.merchant===merchant){ t.ourCat=cat; t.mappingDerived=true; } });
+  delete S.umSelected[merchant];
   scheduleSave();
   const row = document.getElementById(sid);
   if(row){ row.style.transition='opacity 0.15s'; row.style.opacity='0'; setTimeout(()=>{ row.remove(); updateStatusBar(); }, 160); }
